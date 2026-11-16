@@ -1,0 +1,246 @@
+@import "tailwindcss";
+
+/* Honour the OS-level "reduce motion" pref globally (issue #49). Disabling
+   every animation/transition is the conservative choice — individual rules
+   downstream can re-enable specific motion if it's purely informational
+   (e.g. a loading spinner). Lives at the top of the file so it wins against
+   anything cascading below without per-rule `prefers-reduced-motion` checks. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* Drive `--color-brand` from a runtime CSS variable so the root layout can
+   override it inline on <html> (per-user accent picker). The default falls
+   back to the orange — keeps the unauthenticated marketing surfaces and any
+   pre-hydration paint on-brand.
+
+   `--row-py` / `--row-px` are the density tokens consumed by ThreadList rows
+   (issue #35). The defaults match the previous hard-coded `py-3 pr-4`
+   spacing; the `[data-density]` rules below tighten them for cozy / compact. */
+:root {
+  --brand: #f97316;
+  --row-py: 0.75rem;
+  --row-px: 1rem;
+}
+
+/* Density presets stamped on <html> by the root layout from the orange-prefs
+   cookie. Comfortable is identical to :root (left here for completeness so a
+   round-trip from cozy → comfortable resets cleanly). */
+[data-density="comfortable"] {
+  --row-py: 0.75rem;
+  --row-px: 1rem;
+}
+[data-density="cozy"] {
+  --row-py: 0.5rem;
+  --row-px: 1rem;
+}
+[data-density="compact"] {
+  --row-py: 0.3125rem;
+  --row-px: 0.75rem;
+}
+
+@theme inline {
+  --color-brand: var(--brand);
+  --color-brand-fg: #ffffff;
+  --font-sans: var(--font-geist-sans);
+  /* Brand/display face — drives the `font-display` utility. Only used on the
+     wordmark and empty-state headlines; everything else stays on --font-sans. */
+  --font-display: var(--font-fraunces);
+}
+
+/* Theme override.
+
+   Tailwind 4's default `dark` variant matches `prefers-color-scheme: dark`,
+   but we want users to be able to pin Light or Dark regardless of the OS. We
+   wire the `dark:` variant to "apply when the user picked dark, OR they're on
+   system *and* the OS is dark". `data-theme="light"` short-circuits to never
+   match. The root layout stamps `data-theme` on <html> from the cookie. */
+@custom-variant dark {
+  &:where([data-theme="dark"], [data-theme="dark"] *) {
+    @slot;
+  }
+  @media (prefers-color-scheme: dark) {
+    &:where([data-theme="system"], [data-theme="system"] *) {
+      @slot;
+    }
+  }
+}
+
+/* iOS Safari auto-zooms when a focused field renders smaller than 16px.
+   Bump form fields up on small viewports so the page stays put on focus. */
+@media (max-width: 768px) {
+  input:not([type="checkbox"]):not([type="radio"]),
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
+/* Default keyboard focus ring for any interactive element that doesn't bring
+   its own. Mouse clicks don't trigger :focus-visible so this is invisible to
+   pointer users. The 2px brand ring with a 1px offset reads on both the
+   white and near-black surfaces in the app. */
+:where(a, button, [role="button"], [role="menuitem"], [role="menuitemcheckbox"], input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 1px;
+  border-radius: 4px;
+}
+
+/* Subtle motion language (issue #49). The thread row hover is the most
+   common interaction in the app, so it gets the snappiest transition. The
+   modal fade+scale is wired up via `data-orange-modal` attributes on the
+   wrapper of each Compose / lightbox / confirmation surface so we can
+   centralise the timing here rather than redefine it per-component. */
+[data-thread-row] {
+  transition: background-color 120ms ease-out, color 120ms ease-out;
+}
+
+@keyframes orange-modal-in {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+[data-orange-modal] {
+  animation: orange-modal-in 100ms ease-out;
+}
+
+/* Thread-list entrance — one orchestrated reveal on first paint (issue #UX).
+   Each row fades and rises with a stepped delay set inline by ThreadList
+   (capped, so a long list doesn't ripple forever). CSS animations only fire
+   on mount, so surviving rows don't re-animate when the list re-renders after
+   an archive. The global prefers-reduced-motion rule at the top of this file
+   suppresses it entirely. `both` holds the from-state during the delay so a
+   row never flashes at full opacity before its turn. */
+@keyframes orange-row-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+[data-thread-enter] {
+  animation: orange-row-in 220ms ease-out both;
+}
+
+/* Archive/delete exit — collapse the row's height and fade as it leaves so the
+   list closes the gap smoothly instead of snapping (the archive action is the
+   most frequent interaction in the app). `grid-template-rows: 1fr → 0fr`
+   collapses to the row's exact height regardless of the density preset, with
+   no JS measurement. The child needs `min-height: 0` + `overflow: hidden` to
+   shrink below its content. Actual removal from the list is driven by a timer
+   in ThreadList — NOT animationend — so reduced-motion users (for whom this
+   animation is suppressed and animationend never fires) still get the row
+   dropped; on browsers that don't interpolate grid tracks it degrades to a
+   fade + instant collapse, which is no worse than the previous snap. */
+@keyframes orange-row-out {
+  from {
+    grid-template-rows: 1fr;
+    opacity: 1;
+  }
+  to {
+    grid-template-rows: 0fr;
+    opacity: 0;
+  }
+}
+[data-thread-exit] {
+  display: grid;
+  grid-template-rows: 1fr;
+  animation: orange-row-out 150ms ease-out forwards;
+}
+[data-thread-exit] > * {
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* Inbox-zero celebration (issue #UX). The unified inbox reaching empty is the
+   payoff of a triage tool, so its empty state gets a warm brand-tinted entrance
+   distinct from the neutral "no drafts" / "no matches" states. Suppressed under
+   reduced-motion by the global rule. */
+@keyframes orange-celebrate-in {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+[data-inbox-zero] {
+  animation: orange-celebrate-in 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* Print rules (issue #46). The on-screen chrome (sidebar, top bar, action
+   buttons, toasts, composer) is irrelevant on paper — strip it all so a
+   user printing a thread gets just the conversation. We also flatten dark
+   backgrounds back to white so no one wastes a toner cartridge on a black
+   inbox, and force iframes (HTML message bodies) to lay out at their
+   natural height instead of the scrollable fixed-height we use on-screen. */
+@media print {
+  .sidebar,
+  [data-no-print],
+  [aria-label="Sidebar"],
+  [aria-label="Mailboxes"],
+  [aria-label="Top bar"],
+  [aria-label="Compose"],
+  [role="toolbar"] {
+    display: none !important;
+  }
+  body,
+  [data-theme] body,
+  [data-theme] {
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+  .thread-message {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  iframe {
+    height: auto !important;
+    min-height: 0 !important;
+    border: none !important;
+  }
+  /* Prevent dark-mode card surfaces from printing as black blocks. */
+  [class*="dark:bg-"] {
+    background: #ffffff !important;
+  }
+  [class*="dark:text-"] {
+    color: #000000 !important;
+  }
+  a {
+    color: #000000 !important;
+    text-decoration: underline;
+  }
+
+  /* Calendar week-view print stylesheet (#87). The week grid is the only
+     calendar surface that prints meaningfully; day is too narrow and month
+     is too dense. We strip chrome, force a B/W palette so event chips
+     don't lose their outlines on a B/W printer, and hide the live now-line
+     since it's not a useful artifact on paper. */
+  .calendar-week-grid {
+    box-shadow: none !important;
+  }
+  .calendar-week-grid button {
+    break-inside: avoid;
+    color: #000 !important;
+    background: #fff !important;
+    border-color: #000 !important;
+  }
+  .calendar-week-grid .now-line {
+    display: none !important;
+  }
+}

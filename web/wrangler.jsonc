@@ -1,0 +1,79 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "orange-inbox-web",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2026-05-08",
+  "compatibility_flags": [
+    "nodejs_compat",
+    "global_fetch_strictly_public"
+  ],
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+  "services": [
+    {
+      "binding": "WORKER_SELF_REFERENCE",
+      "service": "orange-inbox-web"
+    }
+  ],
+
+  // Shared with email-worker. Run `wrangler d1 create orange-inbox` and paste the id.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "orange-inbox",
+      "database_id": "eb1b4c90-36c6-4806-a38b-5c6ceb5dd1d5",
+      "migrations_dir": "../db/migrations"
+    }
+  ],
+
+  // Raw .eml messages and attachments. Create with `wrangler r2 bucket create <name>`.
+  "r2_buckets": [
+    {
+      "binding": "RAW_MAIL",
+      "bucket_name": "orange-inbox-raw"
+    },
+    {
+      "binding": "ATTACHMENTS",
+      "bucket_name": "orange-inbox-attachments"
+    }
+  ],
+
+  // Auto-saved compose drafts.
+  "kv_namespaces": [
+    {
+      "binding": "DRAFTS",
+      "id": "89cd821d5d734f52b0fb29ea8d1859c4"
+    }
+  ],
+
+  // Workers AI — one-line thread summaries (lazy, on thread open; cached on
+  // threads_index). Pay-per-use; usage is bounded by threads the user opens.
+  "ai": {
+    "binding": "AI"
+  },
+
+  // Outbound email. Sender domain must have Email Routing active in your account.
+  // Without `destination_address` / `allowed_destination_addresses` this binding is
+  // unrestricted, so any verified destination works.
+  "send_email": [
+    {
+      "name": "EMAIL"
+    }
+  ],
+
+  // Web Push (VAPID). Public key + subject are vars (safe to ship). The
+  // private key is a Worker secret; provision via `pnpm vapid` →
+  // `wrangler secret put VAPID_PRIVATE_KEY`. setup.sh handles bootstrap.
+  "vars": {
+    "VAPID_PUBLIC_KEY": "BH8smumQaKTZZh9luj79lTPSVZEfCJbPW6smaIGieSbzYmHxDzEQyZ-wkMhsoOyLJqi6bxfHZTN8fl0YeezpdxE",
+    "VAPID_SUBJECT": "mailto:admin@example.com"
+  }
+
+  // INTERNAL_SECRET and VAPID_PRIVATE_KEY are provisioned as Worker secrets
+  // (not vars) by scripts/setup.sh. INTERNAL_SECRET gates internal endpoints
+  // the email-worker calls via service binding; VAPID_PRIVATE_KEY signs the
+  // VAPID JWT on /api/internal/notify-new-message. For local dev, put both
+  // matching values in web/.dev.vars.
+}

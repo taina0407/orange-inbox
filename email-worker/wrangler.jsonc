@@ -1,0 +1,67 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "orange-inbox-email",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-05-08",
+  "compatibility_flags": ["nodejs_compat"],
+
+  // 1-minute cron drives unsnooze, scheduled-send dispatch, and the
+  // temp_uploads sweeper. All shipped in src/cron.ts.
+  "triggers": {
+    "crons": ["* * * * *"]
+  },
+
+  // Bindings mirror web/wrangler.jsonc so both Workers see the same state.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "orange-inbox",
+      "database_id": "eb1b4c90-36c6-4806-a38b-5c6ceb5dd1d5",
+      "migrations_dir": "../db/migrations"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "RAW_MAIL",
+      "bucket_name": "orange-inbox-raw"
+    },
+    {
+      "binding": "ATTACHMENTS",
+      "bucket_name": "orange-inbox-attachments"
+    }
+  ],
+
+  // Service binding to the web Worker for dispatching scheduled sends. The
+  // web worker exposes /api/internal/dispatch-scheduled which is gated by
+  // the shared INTERNAL_SECRET below.
+  "services": [
+    {
+      "binding": "WEB",
+      "service": "orange-inbox-web"
+    }
+  ],
+
+  // INTERNAL_SECRET is provisioned as a Worker secret by scripts/setup.sh.
+  // Service bindings are private (not reachable from the public internet),
+  // but we still gate /api/internal/dispatch-scheduled with this so a future
+  // misconfiguration doesn't expose it. For local dev, put a matching value
+  // in web/.dev.vars and email-worker/.dev.vars.
+
+  "vars": {
+    // SECURITY: authserv-id of the trusted mail receiver. parse.ts pins
+    // Authentication-Results selection to this value so an attacker who
+    // embeds their own Authentication-Results header in the raw message
+    // cannot forge SPF/DKIM/DMARC verdicts.
+    //
+    // Set this to the authserv-id your MX stamps — the token immediately
+    // before the first `;` in the Authentication-Results header your
+    // receiver (Cloudflare Email Routing) prepends to inbound mail. Inspect
+    // a delivered message's raw source to find it.
+    //
+    // Leave empty ONLY if you accept the weaker fallback: parse.ts will then
+    // trust whichever Authentication-Results header appears first (Cloudflare
+    // prepends its own, so that is normally the trusted one). Setting an
+    // explicit value is strongly recommended.
+    "TRUSTED_AUTHSERV_ID": ""
+  }
+}
